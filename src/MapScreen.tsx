@@ -12,8 +12,12 @@ const MapScreen = () => {
     
     const [isTracking, setIsTracking] = useState(false);
     const watchID = useRef(null);
+    
     const [coordinates, setCoordinates] = useState<LatLng[]>([]);
-    const [time, setTime] = useState<Date | null>(null);
+    const coordinatesRef = useRef<LatLng[]>([]);
+    
+    const [startTime, setStartTime] = useState<Date | null>(null);
+    const [endTime, setEndTime] = useState<Date | null>(null);
 
     // Cleans up the watcher when the user navigates away
     useEffect(() => {
@@ -84,14 +88,33 @@ const MapScreen = () => {
         setIsTracking(true);
         Alert.alert("Tracking started!");
         
+        // Reset starting location
+        setCoordinates([]);
+        
+        // Start recording time
+        setStartTime(new Date());
+        
         watchID.current = Geolocation.watchPosition(
             (position) => {
                 const { latitude, longitude } = position.coords;
                 const newCoordinates = { latitude, longitude };
-                setCoordinates(prev => [...prev, newCoordinates]);
+                setCoordinates(prev => {
+                  const updated = [...prev, newCoordinates];
+                  coordinatesRef.current = updated;
+                  return updated;
+                });
             },
             (error) => {
-                Alert.alert("Error: ", error.message)
+                // If getting the Network Failure error while simulating a workout, ignore the error
+                if (
+                  Platform.OS === 'ios' &&
+                  __DEV__ &&
+                  error.message &&
+                  error.message.toLowerCase().includes("network failure")
+                ) {
+                  return;
+                }
+                Alert.alert("Error:", error.message);
             },
             {
               enableHighAccuracy: true,
@@ -103,11 +126,17 @@ const MapScreen = () => {
     
     const endTracking = () => {
         setIsTracking(false);
-        
         if (!watchID.current) return;
 
         Geolocation.clearWatch(watchID.current);
         watchID.current = null;
+        
+        // Navigate to summary screen and pass coordinates, startTime and endTime as params
+        navigation.navigate('WorkoutComplete', {
+          coordinates: coordinatesRef.current,
+          startTime,
+          endTime: new Date(), // Pass end time as now
+        });
     };
 
     const saveWorkout = () => {
@@ -124,12 +153,6 @@ const MapScreen = () => {
       <MapView
         style={{
           flex: 1,
-        }}
-        initialRegion={{
-          latitude: 51.5074,
-          longitude: -0.1278,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
         }}
         showsUserLocation
         followsUserLocation
