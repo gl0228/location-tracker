@@ -11,6 +11,7 @@ const MapScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
     
     const [isTracking, setIsTracking] = useState(false);
+    const isTrackingRef = useRef(isTracking);
     const watchID = useRef(null);
     
     const [coordinates, setCoordinates] = useState<LatLng[]>([]);
@@ -19,14 +20,24 @@ const MapScreen = () => {
     const [startTime, setStartTime] = useState<Date | null>(null);
     const [endTime, setEndTime] = useState<Date | null>(null);
 
-    // Cleans up the watcher when the user navigates away
     useEffect(() => {
-      return () => {
-        if (watchID.current) {
-          Geolocation.clearWatch(watchID.current);
-        }
-      };
+        return () => {
+            if (watchID.current) {
+                Geolocation.clearWatch(watchID.current);
+                watchID.current = null;
+            }
+            // Optionally reset here if you want a totally fresh start on remount
+            // setCoordinates([]);
+            // coordinatesRef.current = [];
+            // setStartTime(null);
+            // setEndTime(null);
+        };
     }, []);
+
+    
+    useEffect(() => {
+        isTrackingRef.current = isTracking;
+    }, [isTracking]);
     
     const requestPermissions = async () => {
       try {
@@ -80,62 +91,52 @@ const MapScreen = () => {
     };
 
     const startTracking = async () => {
-        // Proceed only if permissions have been granted
         const hasPermission = await requestPermissions();
         if (!hasPermission) return;
-        
-        // Start tracking
+
+        setCoordinates([]); // <--- Reset here!
+        coordinatesRef.current = []; // <--- Reset ref here too!
+
         setIsTracking(true);
-        Alert.alert("Tracking started!");
-        
-        // Reset starting location
-        setCoordinates([]);
-        
-        // Start recording time
         setStartTime(new Date());
-        
+        Alert.alert("Tracking started!");
+
         watchID.current = Geolocation.watchPosition(
             (position) => {
+                if (!isTrackingRef.current) return;
+
                 const { latitude, longitude } = position.coords;
                 const newCoordinates = { latitude, longitude };
                 setCoordinates(prev => {
-                  const updated = [...prev, newCoordinates];
-                  coordinatesRef.current = updated;
-                  return updated;
+                    const updated = [...prev, newCoordinates];
+                    coordinatesRef.current = updated;
+                    return updated;
                 });
             },
-            (error) => {
-                // If getting the Network Failure error while simulating a workout, ignore the error
-                if (
-                  Platform.OS === 'ios' &&
-                  __DEV__ &&
-                  error.message &&
-                  error.message.toLowerCase().includes("network failure")
-                ) {
-                  return;
-                }
-                Alert.alert("Error:", error.message);
-            },
+            (error) => { /* ... */ },
             {
-              enableHighAccuracy: true,
-              distanceFilter: 5,
-              showsBackgroundLocationIndicator: true,
+                enableHighAccuracy: true,
+                distanceFilter: 5,
+                showsBackgroundLocationIndicator: true,
             }
-            );
+        );
     };
+
     
     const endTracking = () => {
+        // First, stop tracking
         setIsTracking(false);
-        if (!watchID.current) return;
 
-        Geolocation.clearWatch(watchID.current);
-        watchID.current = null;
-        
-        // Navigate to summary screen and pass coordinates, startTime and endTime as params
+        if (watchID.current) {
+            Geolocation.clearWatch(watchID.current);
+            watchID.current = null;
+        }
+
+        // Navigate immediately to summary screen with current coordinates
         navigation.navigate('WorkoutComplete', {
-          coordinates: coordinatesRef.current,
-          startTime,
-          endTime: new Date(), // Pass end time as now
+            coordinates: coordinatesRef.current,
+            startTime,
+            endTime: new Date(),
         });
     };
 
