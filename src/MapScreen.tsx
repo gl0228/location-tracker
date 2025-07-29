@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Button, View, Alert } from 'react-native';
-import MapView, { LatLng, Polyline as MapPolyline } from 'react-native-maps';
+import React, { useState, useRef, useEffect } from 'react';
+import Geolocation from 'react-native-geolocation-service';
+import { Button, View, Platform, Alert } from 'react-native';
+import MapView, { LatLng, Polyline } from 'react-native-maps';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,10 +9,21 @@ import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 
 const MapScreen = () => {
     const navigation = useNavigation<NativeStackNavigationProp<any>>();
+    
     const [isTracking, setIsTracking] = useState(false);
-    const [points, setPoints] = useState<LatLng[]>([]);
+    const watchID = useRef(null);
+    const [coordinates, setCoordinates] = useState<LatLng[]>([]);
     const [time, setTime] = useState<Date | null>(null);
 
+    // Cleans up the watcher when the user navigates away
+    useEffect(() => {
+      return () => {
+        if (watchID.current) {
+          Geolocation.clearWatch(watchID.current);
+        }
+      };
+    }, []);
+    
     const requestPermissions = async () => {
       try {
           let status;
@@ -64,14 +76,38 @@ const MapScreen = () => {
     };
 
     const startTracking = async () => {
-      const hasPermission = await requestPermissions();
-      if (!hasPermission) return;
-      setIsTracking(true);
-      Alert.alert("Tracking started!");
+        // Proceed only if permissions have been granted
+        const hasPermission = await requestPermissions();
+        if (!hasPermission) return;
+        
+        // Start tracking
+        setIsTracking(true);
+        Alert.alert("Tracking started!");
+        
+        watchID.current = Geolocation.watchPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                const newCoordinates = { latitude, longitude };
+                setCoordinates(prev => [...prev, newCoordinates]);
+            },
+            (error) => {
+                Alert.alert("Error: ", error.message)
+            },
+            {
+              enableHighAccuracy: true,
+              distanceFilter: 5,
+              showsBackgroundLocationIndicator: true,
+            }
+            );
     };
     
     const endTracking = () => {
         setIsTracking(false);
+        
+        if (!watchID.current) return;
+
+        Geolocation.clearWatch(watchID.current);
+        watchID.current = null;
     };
 
     const saveWorkout = () => {
@@ -99,7 +135,7 @@ const MapScreen = () => {
         followsUserLocation
        >
             {/*  Draws the user's route as a blue line */}
-            <MapPolyline strokeWidth={4} strokeColor="blue" coordinates={points}/>
+            <Polyline strokeWidth={4} strokeColor="blue" coordinates={coordinates}/>
         </MapView>
 
         {/* Button turns tracking on/off */}
