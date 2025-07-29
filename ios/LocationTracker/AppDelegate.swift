@@ -18,6 +18,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
 
+
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
