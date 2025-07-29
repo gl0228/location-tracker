@@ -67,10 +67,6 @@ const MapScreen = () => {
       const hasPermission = await requestPermissions();
       if (!hasPermission) return;
       setIsTracking(true);
-<<<<<<< HEAD
-      // TODO: Implement your tracking logic here!
-=======
->>>>>>> cd285d2 (feat: added user permissions prompt)
       Alert.alert("Tracking started!");
     };
     
