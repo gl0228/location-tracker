@@ -18,6 +18,7 @@ ended. The features implemented in this app include:
 
 
 ## 📦 Project Structure
+```
 ├── src/
 │   ├── components/
 │   │   ├── MapCard.tsx           # Map view with polyline and start/end markers
@@ -29,15 +30,15 @@ ended. The features implemented in this app include:
 ├── MapScreen.tsx                 # Screen that allows user to record route
 ├── WorkoutComplete.tsx           # Workout summary screen
 └── README.md                     # Project overview
-
+```
 
 
 ## 📦 Usage
 - Tap Start Tracking to start a workout
 - Give permissions for locationTracker to use your location
 - The app records your route on the map and displays elapsed time and distance
-- End tracking to view your workout summary: total time, distance, speed, route taken and split breakdown.
-- If the session was interrupted (app closes/crashes), you 
+- End tracking to view your workout summary: total time, distance, speed, route taken and split breakdown
+- If the session was interrupted (app closes/crashes), the user will be asked if they want to resume the last session
 
 ## 🧪 Project Setup
 
