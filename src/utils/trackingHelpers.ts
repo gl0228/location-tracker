@@ -122,15 +122,20 @@ export function getSplitTimes(coords, startTime, endTime, splitLength = 1000) {
       }
 
       let splitTimeSec = (splitTimestamp - lastSplitTime) / 1000;
-      let splitPace = thisSplitDistance > 0
-        ? getPace(splitTimeSec, thisSplitDistance / 1000)
-        : '0:00';
+      let splitPace =
+        thisSplitDistance > 0
+          ? getPace(splitTimeSec, thisSplitDistance / 1000)
+          : '0:00';
 
-      splitTimes.push({
-        split: splitTimes.length + 1,
-        time: splitTimeSec,
-        pace: splitPace,
-      });
+      // only push if time > 2s and distance > 0.25km (250m)
+      // prevents 0:00 as pace
+      if (splitTimeSec > 2 && thisSplitDistance > 250) {
+        splitTimes.push({
+          split: splitTimes.length + 1,
+          time: splitTimeSec,
+          pace: splitPace,
+        });
+      }
 
       lastSplitDist += thisSplitDistance;
       lastSplitTime = splitTimestamp;
@@ -141,4 +146,3 @@ export function getSplitTimes(coords, startTime, endTime, splitLength = 1000) {
   }
   return splitTimes;
 }
-

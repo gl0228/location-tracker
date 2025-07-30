@@ -31,8 +31,8 @@ const MapScreen = () => {
   const watchID = useRef<any>(null);
 
   // Route state
-  const [restoredCoordinates, setRestoredCoordinates] = useState([]);   // array of LatLng
-  const [newCoordinates, setNewCoordinates] = useState([]);             // array of LatLng
+  const [restoredCoordinates, setRestoredCoordinates] = useState([]); 
+  const [newCoordinates, setNewCoordinates] = useState([]);
 
   // Time state
   const [startTime, setStartTime] = useState<Date | null>(null);    // Original session
@@ -177,7 +177,7 @@ const MapScreen = () => {
     if (!hasPermission) return;
 
     if (restoredCoordinates.length > 0 && !resumeTime) {
-      // User resumed an old workout, save how much time was already elapsed
+      // User resumed an old workout, save how much time has already elapsed
       setResumeTime(new Date());
     } else if (!startTime) {
       setStartTime(new Date());
