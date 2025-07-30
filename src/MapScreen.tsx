@@ -1,21 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import Geolocation from 'react-native-geolocation-service';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform, Alert } from 'react-native';
-import MapView, { LatLng, Polyline } from 'react-native-maps';
+import Geolocation from 'react-native-geolocation-service';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { haversine, calculateDistance, formatTime } from './utils/trackingHelpers';
 
+import { calculateDistance, formatTime } from './utils/trackingHelpers';
 import StatsRow from './components/StatsRow';
 import MapCard from './components/MapCard';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-// Custom style for the map
+// Styling for map
 const darkMapStyle = [
   { elementType: 'geometry', stylers: [{ color: '#21284c' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#21284c' }] },
@@ -26,31 +25,84 @@ const MapScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const insets = useSafeAreaInsets();
 
-  // This state tracks if we are recording or not
+  // Track state
   const [isTracking, setIsTracking] = useState(false);
   const isTrackingRef = useRef(isTracking);
   const watchID = useRef<any>(null);
 
-  // Stores the actual route for this workout
-  const [coordinates, setCoordinates] = useState<LatLng[]>([]);
-  const coordinatesRef = useRef<LatLng[]>([]);
+  // Route state
+  const [restoredCoordinates, setRestoredCoordinates] = useState([]);   // array of LatLng
+  const [newCoordinates, setNewCoordinates] = useState([]);             // array of LatLng
 
-  // For the timer
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
+  // Time state
+  const [startTime, setStartTime] = useState<Date | null>(null);    // Original session
+  const [resumeTime, setResumeTime] = useState<Date | null>(null);  // After restore, when user clicks "start"
+  const [initialElapsed, setInitialElapsed] = useState(0);          // Seconds, from first start to resume
+  const [elapsedTime, setElapsedTime] = useState(0);                // Displayed timer
 
-  // Whenever we navigate back to this page, reset everything
+  // Restore logic on mount
+  useEffect(() => {
+    const restoreBackup = async () => {
+      try {
+        const backupStr = await AsyncStorage.getItem('workout_coords_backup');
+        if (backupStr) {
+          const backup = JSON.parse(backupStr);
+          Alert.alert(
+            "Restore Workout?",
+            "A previous workout was interrupted. Do you want to restore it?",
+            [
+              {
+                text: "No",
+                style: "cancel",
+                onPress: async () => {
+                  setRestoredCoordinates([]);
+                  setNewCoordinates([]);
+                  setStartTime(null);
+                  setResumeTime(null);
+                  setElapsedTime(0);
+                  setInitialElapsed(0);
+                  await AsyncStorage.removeItem('workout_coords_backup');
+                }
+              },
+              {
+                text: "Yes",
+                onPress: () => {
+                  setRestoredCoordinates(backup.coordinates || []);
+                  setStartTime(backup.startTime ? new Date(backup.startTime) : null);
+                  // Calculate how much time had elapsed so far
+                  if (backup.startTime) {
+                    const elapsed = Math.floor((Date.now() - new Date(backup.startTime).getTime()) / 1000);
+                    setInitialElapsed(elapsed);
+                    setElapsedTime(elapsed);
+                  } else {
+                    setInitialElapsed(0);
+                    setElapsedTime(0);
+                  }
+                  setNewCoordinates([]);
+                  setResumeTime(null);
+                }
+              }
+            ],
+            { cancelable: false }
+          );
+        }
+      } catch (err) {Alert.alert('Error', 'Something went wrong. Please try again.')}
+    };
+    restoreBackup();
+  }, []);
+
+  // Reset everything when navigating away (unless restoring)
   useFocusEffect(
     useCallback(() => {
       setIsTracking(false);
       isTrackingRef.current = false;
-      setCoordinates([]);
-      coordinatesRef.current = [];
+      setRestoredCoordinates([]);
+      setNewCoordinates([]);
       setStartTime(null);
+      setResumeTime(null);
       setElapsedTime(0);
-      // Remove previous session backup if it exists
+      setInitialElapsed(0);
       AsyncStorage.removeItem('workout_coords_backup');
-      // If there's any active geolocation watcher, clear it
       if (watchID.current) {
         Geolocation.clearWatch(watchID.current);
         watchID.current = null;
@@ -58,35 +110,37 @@ const MapScreen = () => {
     }, [])
   );
 
-  // Tick every second only if we're tracking
+  // Timer
   useEffect(() => {
     let interval: any;
-    if (isTracking && startTime) {
+    if (isTracking) {
       interval = setInterval(() => {
-        setElapsedTime(Math.floor((Date.now() - startTime.getTime()) / 1000));
+        // If resumed, elapsed is initialElapsed + time since resumeTime
+        if (resumeTime) {
+          setElapsedTime(initialElapsed + Math.floor((Date.now() - resumeTime.getTime()) / 1000));
+        } else if (startTime) {
+          setElapsedTime(Math.floor((Date.now() - startTime.getTime()) / 1000));
+        }
       }, 1000);
-    } else {
-      setElapsedTime(0);
     }
     return () => clearInterval(interval);
-  }, [isTracking, startTime]);
+  }, [isTracking, resumeTime, startTime, initialElapsed]);
 
-  // Make sure the ref always matches the latest isTracking state
   useEffect(() => {
     isTrackingRef.current = isTracking;
   }, [isTracking]);
 
-  // Save workout progress in case app crashes or user leaves the app
+  // Save backup whenever progress is made
   useEffect(() => {
-    if (coordinates.length > 0) {
+    if (restoredCoordinates.length > 0 || newCoordinates.length > 0) {
       AsyncStorage.setItem('workout_coords_backup', JSON.stringify({
-        coordinates,
+        coordinates: [...restoredCoordinates, ...newCoordinates],
         startTime: startTime ? startTime.toISOString() : null,
       }));
     }
-  }, [coordinates, startTime]);
+  }, [restoredCoordinates, newCoordinates, startTime]);
 
-  // This handles location permissions for both iOS and Android
+  // Permissions
   const requestPermissions = async () => {
     try {
       let status;
@@ -99,28 +153,16 @@ const MapScreen = () => {
         case RESULTS.GRANTED:
           return true;
         case RESULTS.DENIED:
-          Alert.alert(
-            "Location Permission Needed",
-            "Turn on location access so we can track your workout routes!"
-          );
+          Alert.alert("Location Permission Needed", "Turn on location access so we can track your workout routes!");
           return false;
         case RESULTS.BLOCKED:
-          Alert.alert(
-            "Location Permission Blocked",
-            "Enable location permissions so we can track your workout routes!"
-          );
+          Alert.alert("Location Permission Blocked", "Enable location permissions so we can track your workout routes!");
           return false;
         case RESULTS.LIMITED:
-          Alert.alert(
-            "Limited Location Access",
-            "Your location access is limited. Allow full access for best results!"
-          );
+          Alert.alert("Limited Location Access", "Your location access is limited. Allow full access for best results!");
           return true;
         default:
-          Alert.alert(
-            "Permission Error",
-            "Could not determine location permission status."
-          );
+          Alert.alert("Permission Error", "Could not determine location permission status.");
           return false;
       }
     } catch (error) {
@@ -129,29 +171,28 @@ const MapScreen = () => {
     }
   };
 
-  // Starts a new workout and begins tracking location
+  // Start Tracking
   const startTracking = async () => {
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
 
-    setCoordinates([]);
-    coordinatesRef.current = [];
-    setIsTracking(true);
-    setStartTime(new Date());
+    if (restoredCoordinates.length > 0 && !resumeTime) {
+      // User resumed an old workout, save how much time was already elapsed
+      setResumeTime(new Date());
+    } else if (!startTime) {
+      setStartTime(new Date());
+    }
 
-    // Start listening for location changes
+    setIsTracking(true);
+
     watchID.current = Geolocation.watchPosition(
       (position) => {
         if (!isTrackingRef.current) return;
         const { latitude, longitude } = position.coords;
-        const newCoordinates = { latitude, longitude };
-        setCoordinates(prev => {
-          const updated = [...prev, newCoordinates];
-          coordinatesRef.current = updated;
-          return updated;
-        });
+        const newPoint = { latitude, longitude };
+        setNewCoordinates(prev => [...prev, newPoint]);
       },
-      (error) => { /* can show an error here if you want */ },
+      (error) => {},
       {
         enableHighAccuracy: true,
         distanceFilter: 5,
@@ -160,127 +201,66 @@ const MapScreen = () => {
     );
   };
 
-  // Stops workout, clears up, and navigates to the "Workout Complete" page
+  // End Tracking
   const endTracking = async () => {
     setIsTracking(false);
-
-    // Clear the location watcher if we started it
     if (watchID.current) {
       Geolocation.clearWatch(watchID.current);
       watchID.current = null;
     }
-
-    // Remove any backup
     await AsyncStorage.removeItem('workout_coords_backup');
-
     navigation.navigate('WorkoutComplete', {
-      coordinates: coordinatesRef.current,
-      startTime,
+      coordinates: [...restoredCoordinates, ...newCoordinates],
+      startTime: startTime,
       endTime: new Date(),
     });
   };
 
-  // Calculate distance for stats display
-  const totalMeters = calculateDistance(coordinates);
+  // Distance calculation
+  const restoredMeters = calculateDistance(restoredCoordinates);
+  const newMeters = calculateDistance(newCoordinates);
+  const totalMeters = restoredMeters + newMeters;
   const totalDistance = (totalMeters / 1000).toFixed(2);
-    
-    return (
-      <LinearGradient
-        colors={['#25155c', '#232969']}
-        style={{ flex: 1 }}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-      >
-        {/* Timer and Distance stats (now using the StatsRow component) */}
-        <StatsRow
-          time={formatTime(elapsedTime)}
-          distance={totalDistance}
-          unit="km"
-        />
 
-        {/* The Map (now using the MapCard component) */}
-        <MapCard
-          coordinates={coordinates}
-          customMapStyle={darkMapStyle}
-        />
+  // Combine for polyline display
+  const allCoordinates = [...restoredCoordinates, ...newCoordinates];
 
-        {/* Start or Stop button, depending on current state */}
-        <View
-          style={[
-            styles.buttonWrapper,
-            { bottom: insets.bottom ? insets.bottom + 24 : 40 },
-          ]}
+  return (
+    <LinearGradient
+      colors={['#25155c', '#232969']}
+      style={{ flex: 1 }}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+    >
+      <StatsRow time={formatTime(elapsedTime)} distance={totalDistance} unit="km" />
+      <MapCard coordinates={allCoordinates} customMapStyle={darkMapStyle} />
+      <View style={[
+        styles.buttonWrapper,
+        { bottom: insets.bottom ? insets.bottom + 24 : 40 },
+      ]}>
+        <TouchableOpacity
+          onPress={isTracking ? endTracking : startTracking}
+          activeOpacity={0.8}
         >
-          <TouchableOpacity
-            onPress={isTracking ? endTracking : startTracking}
-            activeOpacity={0.8}
+          <LinearGradient
+            colors={['#9341c8', '#3ca6f6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.button}
           >
-            <LinearGradient
-              colors={['#9341c8', '#3ca6f6']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.button}
-            >
-              <Text style={styles.buttonText}>
-                {isTracking ? 'End Tracking' : 'Start tracking'}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
-    );
+            <Text style={styles.buttonText}>
+              {isTracking ? 'End Tracking' : 'Start tracking'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </LinearGradient>
+  );
 };
 
 export default MapScreen;
 
 const styles = StyleSheet.create({
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    marginTop: 55,
-    marginBottom: 24,
-    width: '90%',
-    alignSelf: 'center',
-  },
-  statCol: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    color: 'white',
-    fontSize: 42,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 3,
-  },
-  statLabel: {
-    color: '#7a7afc',
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 1.2,
-    marginBottom: 5,
-  },
-  verticalDivider: {
-    width: 1,
-    height: 52,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    marginHorizontal: 20,
-    alignSelf: 'center',
-  },
-  mapContainer: {
-    width: SCREEN_WIDTH * 0.92,
-    height: SCREEN_WIDTH * 0.92,
-    borderRadius: 28,
-    overflow: 'hidden',
-    alignSelf: 'center',
-    backgroundColor: '#181e3a',
-    marginBottom: 28,
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-  },
   buttonWrapper: {
     position: 'absolute',
     left: 0,
@@ -306,5 +286,7 @@ const styles = StyleSheet.create({
     paddingRight: 90,
   },
 });
+
+
 
 
