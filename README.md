@@ -18,6 +18,7 @@ ended. The features implemented in this app include:
 
 
 ## 📦 Project Structure
+```
 ├── src/
 │   ├── components/
 │   │   ├── MapCard.tsx           # Map view with polyline and start/end markers
@@ -29,7 +30,7 @@ ended. The features implemented in this app include:
 ├── MapScreen.tsx                 # Screen that allows user to record route
 ├── WorkoutComplete.tsx           # Workout summary screen
 └── README.md                     # Project overview
-
+```
 
 
 ## 📦 Usage
