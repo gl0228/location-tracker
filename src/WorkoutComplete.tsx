@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Dimensions, ScrollView } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import MapView, { Polyline, Marker } from 'react-native-maps';
-import { haversine, calculateDistance } from '../utils/trackingHelpers';
+import { haversine, calculateDistance } from './utils/trackingHelpers';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -365,5 +365,4 @@ const styles = StyleSheet.create({
 });
 
 export default WorkoutComplete;
-
 

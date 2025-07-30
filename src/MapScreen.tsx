@@ -8,7 +8,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { haversine, calculateDistance, formatTime } from '../utils/trackingHelpers';
+import { haversine, calculateDistance, formatTime } from './utils/trackingHelpers';
+
+import StatsRow from './components/StatsRow';
+import MapCard from './components/MapCard';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -180,66 +183,52 @@ const MapScreen = () => {
   // Calculate distance for stats display
   const totalMeters = calculateDistance(coordinates);
   const totalDistance = (totalMeters / 1000).toFixed(2);
+    
+    return (
+      <LinearGradient
+        colors={['#25155c', '#232969']}
+        style={{ flex: 1 }}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      >
+        {/* Timer and Distance stats (now using the StatsRow component) */}
+        <StatsRow
+          time={formatTime(elapsedTime)}
+          distance={totalDistance}
+          unit="km"
+        />
 
-  return (
-    <LinearGradient
-      colors={['#25155c', '#232969']}
-      style={{ flex: 1 }}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-    >
-      {/* Timer and Distance stats */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCol}>
-          <Text style={styles.statValue}>{formatTime(elapsedTime)}</Text>
-          <Text style={styles.statLabel}>TIME</Text>
-        </View>
-        <View style={styles.verticalDivider} />
-        <View style={styles.statCol}>
-          <Text style={styles.statValue}>{totalDistance}</Text>
-          <Text style={styles.statLabel}>km</Text>
-        </View>
-      </View>
-
-      {/* The Map */}
-      <View style={styles.mapContainer}>
-        <MapView
-          style={styles.map}
+        {/* The Map (now using the MapCard component) */}
+        <MapCard
+          coordinates={coordinates}
           customMapStyle={darkMapStyle}
-          showsUserLocation
-          followsUserLocation
-        >
-          <Polyline
-            strokeWidth={5}
-            strokeColor="#b174f9"
-            coordinates={coordinates}
-          />
-        </MapView>
-      </View>
+        />
 
-      {/* Start or Stop button, depending on current state */}
-      <View style={[
-        styles.buttonWrapper,
-        { bottom: insets.bottom ? insets.bottom + 24 : 40 },
-      ]}>
-        <TouchableOpacity
-          onPress={isTracking ? endTracking : startTracking}
-          activeOpacity={0.8}
+        {/* Start or Stop button, depending on current state */}
+        <View
+          style={[
+            styles.buttonWrapper,
+            { bottom: insets.bottom ? insets.bottom + 24 : 40 },
+          ]}
         >
-          <LinearGradient
-            colors={['#9341c8', '#3ca6f6']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.button}
+          <TouchableOpacity
+            onPress={isTracking ? endTracking : startTracking}
+            activeOpacity={0.8}
           >
-            <Text style={styles.buttonText}>
-              {isTracking ? 'End Tracking' : 'Start tracking'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-    </LinearGradient>
-  );
+            <LinearGradient
+              colors={['#9341c8', '#3ca6f6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.button}
+            >
+              <Text style={styles.buttonText}>
+                {isTracking ? 'End Tracking' : 'Start tracking'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    );
 };
 
 export default MapScreen;
