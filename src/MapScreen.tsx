@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform, Alert }
 import Geolocation from 'react-native-geolocation-service';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -23,7 +22,6 @@ const darkMapStyle = [
 
 const MapScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
-  const insets = useSafeAreaInsets();
 
   // Track state
   const [isTracking, setIsTracking] = useState(false);
@@ -31,7 +29,7 @@ const MapScreen = () => {
   const watchID = useRef<any>(null);
 
   // Route state
-  const [restoredCoordinates, setRestoredCoordinates] = useState([]); 
+  const [restoredCoordinates, setRestoredCoordinates] = useState([]);
   const [newCoordinates, setNewCoordinates] = useState([]);
 
   // Time state
