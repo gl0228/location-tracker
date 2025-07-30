@@ -1,46 +1,18 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Geolocation from 'react-native-geolocation-service';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Platform, Alert } from 'react-native';
 import MapView, { LatLng, Polyline } from 'react-native-maps';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { haversine, calculateDistance, formatTime } from '../utils/trackingHelpers';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const R = 6371000;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function calculateDistance(coords: LatLng[]) {
-  let total = 0;
-  for (let i = 1; i < coords.length; i++) {
-    const prev = coords[i - 1];
-    const curr = coords[i];
-    total += haversine(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
-  }
-  return total;
-}
-
-function formatTime(sec: number) {
-  const m = Math.floor(sec / 60).toString();
-  const s = (sec % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
-
+// Custom style for the map
 const darkMapStyle = [
   { elementType: 'geometry', stylers: [{ color: '#21284c' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#21284c' }] },
@@ -51,17 +23,39 @@ const MapScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const insets = useSafeAreaInsets();
 
+  // This state tracks if we are recording or not
   const [isTracking, setIsTracking] = useState(false);
   const isTrackingRef = useRef(isTracking);
   const watchID = useRef<any>(null);
 
+  // Stores the actual route for this workout
   const [coordinates, setCoordinates] = useState<LatLng[]>([]);
   const coordinatesRef = useRef<LatLng[]>([]);
 
+  // For the timer
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
 
-  // Track elapsed time live
+  // Whenever we navigate back to this page, reset everything
+  useFocusEffect(
+    useCallback(() => {
+      setIsTracking(false);
+      isTrackingRef.current = false;
+      setCoordinates([]);
+      coordinatesRef.current = [];
+      setStartTime(null);
+      setElapsedTime(0);
+      // Remove previous session backup if it exists
+      AsyncStorage.removeItem('workout_coords_backup');
+      // If there's any active geolocation watcher, clear it
+      if (watchID.current) {
+        Geolocation.clearWatch(watchID.current);
+        watchID.current = null;
+      }
+    }, [])
+  );
+
+  // Tick every second only if we're tracking
   useEffect(() => {
     let interval: any;
     if (isTracking && startTime) {
@@ -74,38 +68,39 @@ const MapScreen = () => {
     return () => clearInterval(interval);
   }, [isTracking, startTime]);
 
+  // Make sure the ref always matches the latest isTracking state
   useEffect(() => {
     isTrackingRef.current = isTracking;
   }, [isTracking]);
 
+  // Save workout progress in case app crashes or user leaves the app
   useEffect(() => {
-    return () => {
-      if (watchID.current) {
-        Geolocation.clearWatch(watchID.current);
-        watchID.current = null;
-      }
-    };
-  }, []);
+    if (coordinates.length > 0) {
+      AsyncStorage.setItem('workout_coords_backup', JSON.stringify({
+        coordinates,
+        startTime: startTime ? startTime.toISOString() : null,
+      }));
+    }
+  }, [coordinates, startTime]);
 
+  // This handles location permissions for both iOS and Android
   const requestPermissions = async () => {
     try {
       let status;
-
       if (Platform.OS === 'ios') {
         status = await request(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
       } else if (Platform.OS === 'android') {
         status = await request(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
       }
-
       switch (status) {
+        case RESULTS.GRANTED:
+          return true;
         case RESULTS.DENIED:
           Alert.alert(
             "Location Permission Needed",
             "Turn on location access so we can track your workout routes!"
           );
           return false;
-        case RESULTS.GRANTED:
-          return true;
         case RESULTS.BLOCKED:
           Alert.alert(
             "Location Permission Blocked",
@@ -131,16 +126,17 @@ const MapScreen = () => {
     }
   };
 
+  // Starts a new workout and begins tracking location
   const startTracking = async () => {
     const hasPermission = await requestPermissions();
     if (!hasPermission) return;
 
     setCoordinates([]);
     coordinatesRef.current = [];
-
     setIsTracking(true);
     setStartTime(new Date());
 
+    // Start listening for location changes
     watchID.current = Geolocation.watchPosition(
       (position) => {
         if (!isTrackingRef.current) return;
@@ -152,7 +148,7 @@ const MapScreen = () => {
           return updated;
         });
       },
-      (error) => { /* handle error */ },
+      (error) => { /* can show an error here if you want */ },
       {
         enableHighAccuracy: true,
         distanceFilter: 5,
@@ -161,13 +157,18 @@ const MapScreen = () => {
     );
   };
 
-  const endTracking = () => {
+  // Stops workout, clears up, and navigates to the "Workout Complete" page
+  const endTracking = async () => {
     setIsTracking(false);
 
+    // Clear the location watcher if we started it
     if (watchID.current) {
       Geolocation.clearWatch(watchID.current);
       watchID.current = null;
     }
+
+    // Remove any backup
+    await AsyncStorage.removeItem('workout_coords_backup');
 
     navigation.navigate('WorkoutComplete', {
       coordinates: coordinatesRef.current,
@@ -176,6 +177,7 @@ const MapScreen = () => {
     });
   };
 
+  // Calculate distance for stats display
   const totalMeters = calculateDistance(coordinates);
   const totalDistance = (totalMeters / 1000).toFixed(2);
 
@@ -186,7 +188,7 @@ const MapScreen = () => {
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
     >
-      {/* Stats Row */}
+      {/* Timer and Distance stats */}
       <View style={styles.statsRow}>
         <View style={styles.statCol}>
           <Text style={styles.statValue}>{formatTime(elapsedTime)}</Text>
@@ -199,7 +201,7 @@ const MapScreen = () => {
         </View>
       </View>
 
-      {/* Map */}
+      {/* The Map */}
       <View style={styles.mapContainer}>
         <MapView
           style={styles.map}
@@ -215,7 +217,7 @@ const MapScreen = () => {
         </MapView>
       </View>
 
-      {/* Start/Stop Button */}
+      {/* Start or Stop button, depending on current state */}
       <View style={[
         styles.buttonWrapper,
         { bottom: insets.bottom ? insets.bottom + 24 : 40 },
@@ -290,30 +292,30 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-    buttonWrapper: {
-      position: 'absolute',
-      left: 0,
-      right: 0,
-      alignItems: 'center',
-    },
-    button: {
-      paddingVertical: 18,
-      paddingHorizontal: 50,
-        paddingLeft: 50,
-      borderRadius: 999,
-      alignItems: 'center',
-      width: SCREEN_WIDTH * 0.95,
-      maxWidth: 370,
-      minWidth: 200,
-      height: 100,
-        marginBottom: 50
-    },
-    buttonText: {
-      color: 'white',
-      fontSize: 26,
-      fontWeight: '600',
-      textAlign: 'center',
-        paddingRight: 90,
-    },
+  buttonWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  button: {
+    paddingVertical: 18,
+    paddingHorizontal: 50,
+    borderRadius: 999,
+    alignItems: 'center',
+    width: SCREEN_WIDTH * 0.95,
+    maxWidth: 370,
+    minWidth: 200,
+    height: 100,
+    marginBottom: 50,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 26,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingRight: 90,
+  },
 });
+
 
