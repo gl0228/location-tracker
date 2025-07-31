@@ -40,7 +40,7 @@ const MapScreen = () => {
   const [initialElapsed, setInitialElapsed] = useState(0);          // Seconds, from first start to resume
   const [elapsedTime, setElapsedTime] = useState(0);                // Displayed timer
 
-  // Restore logic on mount
+  // Option to restore previous workout session on mount
   useEffect(() => {
     const restoreBackup = async () => {
       try {
@@ -86,12 +86,14 @@ const MapScreen = () => {
             { cancelable: false }
           );
         }
-      } catch (err) {Alert.alert('Error', 'Something went wrong. Please try again.')}
+      } catch (err) {
+        Alert.alert('Error', 'Something went wrong. Please try again.');
+      }
     };
     restoreBackup();
   }, []);
 
-  // Reset everything when navigating away (unless restoring)
+  // Reset everything when navigating to another screen, unless user chooses to restore
   useFocusEffect(
     useCallback(() => {
       setIsTracking(false);
@@ -140,7 +142,7 @@ const MapScreen = () => {
     }
   }, [restoredCoordinates, newCoordinates, startTime]);
 
-  // Permissions
+  // Ask user for location permissions when the app is first downloaded
   const requestPermissions = async () => {
     try {
       let status;
@@ -185,6 +187,7 @@ const MapScreen = () => {
 
     setIsTracking(true);
 
+    // Start watching the user's GPS position and add each new point to the route if tracking is active
     watchID.current = Geolocation.watchPosition(
       (position) => {
         if (!isTrackingRef.current) return;
@@ -204,10 +207,12 @@ const MapScreen = () => {
   // End Tracking
   const endTracking = async () => {
     setIsTracking(false);
+    // Clear the geolocation watcher
     if (watchID.current) {
       Geolocation.clearWatch(watchID.current);
       watchID.current = null;
     }
+    // Remove backup since the session has finished
     await AsyncStorage.removeItem('workout_coords_backup');
     navigation.navigate('WorkoutComplete', {
       coordinates: [...restoredCoordinates, ...newCoordinates],
@@ -222,7 +227,7 @@ const MapScreen = () => {
   const totalMeters = restoredMeters + newMeters;
   const totalDistance = (totalMeters / 1000).toFixed(2);
 
-  // Combine for polyline display
+  // Combine coordinates for route display
   const allCoordinates = [...restoredCoordinates, ...newCoordinates];
 
   return (
@@ -258,8 +263,6 @@ const MapScreen = () => {
   );
 };
 
-export default MapScreen;
-
 const styles = StyleSheet.create({
   buttonWrapper: {
     position: 'absolute',
@@ -287,6 +290,7 @@ const styles = StyleSheet.create({
   },
 });
 
+export default MapScreen;
 
 
 

@@ -7,6 +7,7 @@ import { haversine, calculateDistance, getBoundingRegion, getSplitTimes, getPace
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 const WorkoutComplete = ({ route }) => {
+  // Get params from MapScreen
   const { coordinates, startTime, endTime } = route.params;
 
   // Calculate main stats for the workout
@@ -40,7 +41,6 @@ const WorkoutComplete = ({ route }) => {
     return min * 60 + sec;
   }));
 
-  // Start of UI
   return (
     <LinearGradient
       colors={['#1b1571', '#2b1b6b']}
@@ -48,6 +48,7 @@ const WorkoutComplete = ({ route }) => {
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
     >
+      {/* Ensure screen is scrollable in case there are many split times */}
       <ScrollView
         contentContainerStyle={{ alignItems: 'center', paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
@@ -85,7 +86,7 @@ const WorkoutComplete = ({ route }) => {
           </MapView>
         </View>
 
-        {/* Total time, distance, and speed */}
+        {/* Display total time, distance, and speed */}
         <View style={styles.statsRow}>
           <View style={styles.statCol}>
             <Text style={styles.statValue}>{duration}</Text>

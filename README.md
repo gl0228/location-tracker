@@ -14,7 +14,7 @@ ended. The features implemented in this app include:
     - Total time, distance and average speed
     - Split times bar chart (pace per km)
 - If app crashes, a previous session can be resumed
-- Handle permission errors gracefully
+- Handles permission errors gracefully
 
 
 ## 📦 Project Structure
