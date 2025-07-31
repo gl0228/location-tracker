@@ -37,12 +37,12 @@ export function formatTime(sec: number): string {
 // Centers and zooms the map so the whole route shows up on workout complete
 export function getBoundingRegion(coords: LatLng[]) {
   if (!coords || coords.length === 0) {
-    return {
-      latitude: 51.5074,
-      longitude: -0.1278,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01,
-    };
+      return {
+        latitude: 37.3349,
+        longitude: -122.0090,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
   }
   let minLat = coords[0].latitude;
   let maxLat = coords[0].latitude;
@@ -68,81 +68,99 @@ export function getBoundingRegion(coords: LatLng[]) {
 }
 
 // Get pace of the user (time taken to run 1 km)
-export function getPace(timeSec: number, distKm: number) {
-  if (distKm === 0) return '0:00';
-  const paceSec = timeSec / distKm;
+export function getPace(seconds, km) {
+  if (!km || seconds <= 0) return '0:00';
+  const paceSec = seconds / km;
   const min = Math.floor(paceSec / 60);
   const sec = Math.round(paceSec % 60);
   return `${min}:${sec < 10 ? '0' : ''}${sec}`;
 }
 
-// Figure out split times for each 1km to show pacing breakdown
+
 export function getSplitTimes(coords, startTime, endTime, splitLength = 1000) {
   if (!coords || coords.length < 2) return [];
 
   const splitTimes = [];
-  const totalDurationMs = new Date(endTime) - new Date(startTime);
-  const totalDistance = calculateDistance(coords);
-
-  let lastSplitTime = new Date(startTime).getTime();
+  let splitNum = 1;
   let lastSplitDist = 0;
+  let lastSplitTime = new Date(startTime).getTime();
+  let cumulativeDist = 0;
 
-  // This array keeps track of how far the user is at each GPS point
-  let cumulativeDistances = [0];
+  // Use timestamps if present, otherwise interpolate
+  let hasTimestamps = coords.every(pt => !!pt.timestamp);
+  let times = [];
+  if (hasTimestamps) {
+    times = coords.map(pt => new Date(pt.timestamp).getTime());
+  } else {
+    // Interpolate times based on index
+    const totalDuration = new Date(endTime) - new Date(startTime);
+    times = coords.map((_, i) =>
+      new Date(startTime).getTime() +
+      (i / (coords.length - 1)) * totalDuration
+    );
+  }
+
   for (let i = 1; i < coords.length; i++) {
     const prev = coords[i - 1];
     const curr = coords[i];
+
     const segDist = haversine(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
-    cumulativeDistances[i] = cumulativeDistances[i - 1] + segDist;
-  }
+    const prevTime = times[i - 1];
+    const currTime = times[i];
 
-  for (let i = 1; i < coords.length; i++) {
-    // Keep creating splits until hitting the end
-    while (
-      cumulativeDistances[i] - lastSplitDist >= splitLength ||
-      (i === coords.length - 1 && cumulativeDistances[i] > lastSplitDist)
-    ) {
-      let thisSplitDistance = Math.min(splitLength, cumulativeDistances[i] - lastSplitDist);
+    let segStartDist = cumulativeDist;
+    cumulativeDist += segDist;
+    let segEndDist = cumulativeDist;
 
-      // Interpolate the timestamp for the split
-      let prevDist = cumulativeDistances[i - 1];
-      let currDist = cumulativeDistances[i];
-      let prevTime = lastSplitTime;
-      let currTime = lastSplitTime + ((currDist - lastSplitDist) / (totalDistance - lastSplitDist)) * (totalDurationMs - (lastSplitTime - new Date(startTime).getTime()));
-      let splitTimestamp;
-      let fraction;
+    while (segEndDist - lastSplitDist >= splitLength) {
+      const distToNextSplit = splitLength - (segStartDist - lastSplitDist);
+      const fraction = distToNextSplit / segDist;
+      const splitTimestamp = prevTime + fraction * (currTime - prevTime);
 
-      if (thisSplitDistance === splitLength) {
-        // Guess where the split should fall between two points
-        fraction = (splitLength - (prevDist - lastSplitDist)) / (currDist - prevDist);
-        splitTimestamp = prevTime + fraction * (currTime - prevTime);
-      } else {
-        // Use end time for last split
-        splitTimestamp = currTime;
-      }
+      const splitTimeSec = (splitTimestamp - lastSplitTime) / 1000;
+      const pace = getPace(splitTimeSec, splitLength / 1000);
 
-      let splitTimeSec = (splitTimestamp - lastSplitTime) / 1000;
-      let splitPace =
-        thisSplitDistance > 0
-          ? getPace(splitTimeSec, thisSplitDistance / 1000)
-          : '0:00';
+      // The cumulative distance at this split
+      const cumulativeKm = (lastSplitDist + splitLength) / 1000;
 
-      // only push if time > 2s and distance > 0.25km (250m)
-      // prevents 0:00 as pace
-      if (splitTimeSec > 2 && thisSplitDistance > 250) {
+      // Don't push splits with nonpositive time
+      if (splitTimeSec > 0) {
         splitTimes.push({
-          split: splitTimes.length + 1,
+          split: splitNum,
+          distance: cumulativeKm, // e.g. 1, 2, 3, ...
           time: splitTimeSec,
-          pace: splitPace,
+          pace,
         });
+        splitNum += 1;
       }
 
-      lastSplitDist += thisSplitDistance;
+      lastSplitDist += splitLength;
       lastSplitTime = splitTimestamp;
+      segStartDist += distToNextSplit;
 
-      // Avoid infinite loops on the very last split
-      if (thisSplitDistance < splitLength) break;
+      if (segEndDist - lastSplitDist < 1e-6) break;
     }
   }
+
+  // Final partial split if enough left (optional, e.g. last .26km)
+  if (cumulativeDist - lastSplitDist > 200) {
+    const finalTime = new Date(endTime).getTime();
+    const splitDist = cumulativeDist - lastSplitDist;
+    const splitTimeSec = (finalTime - lastSplitTime) / 1000;
+    const pace = getPace(splitTimeSec, splitDist / 1000);
+    const finalKm = cumulativeDist / 1000;
+    if (splitTimeSec > 0) {
+      splitTimes.push({
+        split: splitNum,
+        distance: finalKm, // the final cumulative distance (e.g. 2.26)
+        time: splitTimeSec,
+        pace,
+      });
+    }
+  }
+
   return splitTimes;
 }
+
+
+

@@ -111,31 +111,39 @@ const WorkoutComplete = ({ route }) => {
               <Text style={styles.splitsColHeader}>PACE</Text>
               <View style={{ flex: 1 }} />
             </View>
-            {splitTimes.map((split, idx) => {
-              const [min, sec] = split.pace.split(':').map(Number);
-              const paceSec = min * 60 + sec;
-              // Bar width is longer for faster splits
-              let widthPercent = 40 + 60 * (minPaceSec / paceSec);
-              if (!isFinite(widthPercent) || widthPercent < 0) widthPercent = 40;
-              widthPercent = Math.max(24, widthPercent);
-              return (
-                <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 7 }}>
-                  <Text style={styles.splitsCol}>{split.split}</Text>
-                  <Text style={styles.splitsCol}>{split.pace}</Text>
-                  <View style={styles.splitsBarBg}>
-                    <View
-                      style={[
-                        styles.splitsBarFill,
-                        {
-                          width: `${widthPercent}%`,
-                          minWidth: 24,
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-              );
-            })}
+           {splitTimes.map((split, idx) => {
+             const [min, sec] = split.pace.split(':').map(Number);
+             const paceSec = min * 60 + sec;
+             let widthPercent = 40 + 60 * (minPaceSec / paceSec);
+             if (!isFinite(widthPercent) || widthPercent < 0) widthPercent = 40;
+             widthPercent = Math.max(24, widthPercent);
+
+             return (
+               <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 7 }}>
+                 <Text style={styles.splitsCol}>
+                   {/* Show cumulative KM for each split, formatted as '1', '2', '2,26', etc. */}
+                   {split.distance
+                     ? split.distance === Math.floor(split.distance)
+                       ? split.distance.toFixed(0)
+                       : split.distance.toFixed(2).replace('.', ',')
+                     : split.split}
+                 </Text>
+                 <Text style={styles.splitsCol}>{split.pace}</Text>
+                 <View style={styles.splitsBarBg}>
+                   <View
+                     style={[
+                       styles.splitsBarFill,
+                       {
+                         width: `${widthPercent}%`,
+                         minWidth: 24,
+                       },
+                     ]}
+                   />
+                 </View>
+               </View>
+             );
+           })}
+
           </View>
         )}
       </ScrollView>
